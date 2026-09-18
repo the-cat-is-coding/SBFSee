@@ -1,0 +1,11 @@
+# Python & Environment
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Database Secrets (CRITICAL)
+db_config.py
+
+# OS Files
+.DS_Store

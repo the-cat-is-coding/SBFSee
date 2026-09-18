@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBFSee - Boating License Trainer</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚓</text></svg>">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- External Configuration File -->
+    <script src="config.js"></script>
+</head>
+
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col justify-between font-sans">
+
+    <!-- Header -->
+    <header class="w-full bg-slate-800 border-b border-slate-700 py-4 px-6 shadow-md">
+        <div class="max-w-3xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-wide text-blue-400">⚓ SBFSee Training</h1>
+            <div id="stats-badge" class="text-sm bg-slate-700 px-3 py-1 rounded-full text-slate-300">
+                Streak: <span id="streak-count" class="font-bold text-white">0</span> | <span id="mastery-status"
+                    class="text-slate-400">Unmastered</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Quiz Container -->
+    <main class="flex-grow flex items-center justify-center p-4">
+        <div class="w-full max-w-2xl bg-slate-800 border border-slate-700 rounded-2xl shadow-xl p-6 sm:p-8">
+
+            <!-- Question Meta Info -->
+            <div class="flex justify-between items-center text-xs text-slate-400 mb-4 uppercase tracking-wider">
+                <span id="question-id-label">Question #--</span>
+                <span id="theory-page-label"></span>
+            </div>
+
+            <!-- Question Text -->
+            <h2 id="question-text" class="text-lg sm:text-xl font-medium text-slate-100 mb-6 leading-relaxed">
+                Loading question...
+            </h2>
+
+            <!-- Optional Multiple Images Display Container -->
+            <div id="image-container"
+                class="mb-6 hidden flex flex-wrap justify-center gap-3 bg-white p-4 rounded-xl border border-slate-700 shadow-inner">
+                <!-- Dynamic images injected here -->
+            </div>
+
+            <!-- Options Grid -->
+            <div id="options-container" class="space-y-3 mb-6">
+                <!-- Option buttons injected dynamically -->
+            </div>
+
+            <!-- Action Footer inside Card -->
+            <div class="flex justify-end pt-4 border-t border-slate-700">
+                <button id="next-btn" onclick="loadNextQuestion()"
+                    class="hidden bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-2.5 rounded-xl transition shadow-lg">
+                    Nächste Frage →
+                </button>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center py-4 text-xs text-slate-500">
+        SBFSee Training App • Created by Felix Jaeger
+    </footer>
+
+    <!-- Application Script -->
+    <script>
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let currentQuestion = null;
+        let isAnswerLocked = false;
+
+        // Fisher-Yates Shuffle Algorithm for randomizing options
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        async function loadNextQuestion() {
+            isAnswerLocked = false;
+            document.getElementById('next-btn').classList.add('hidden');
+            document.getElementById('question-text').innerText = "Laden der nächsten Frage...";
+            document.getElementById('options-container').innerHTML = '';
+            document.getElementById('image-container').classList.add('hidden');
+
+            try {
+                // 1. Fetch next question using the 80/20 RPC function
+                const { data: qData, error: qError } = await supabaseClient.rpc('get_next_question');
+
+                if (qError) throw qError;
+                if (!qData || qData.length === 0) {
+                    document.getElementById('question-text').innerText = "Glückwunsch! Du hast alle Fragen richtig beantwortet.";
+                    return;
+                }
+
+                currentQuestion = qData[0];
+
+                // 2. Fetch options associated with this question ID
+                const { data: optsData, error: optsError } = await supabaseClient
+                    .from('boating_options')
+                    .select('*')
+                    .eq('question_id', currentQuestion.question_id);
+
+                if (optsError) throw optsError;
+
+                renderQuestion(currentQuestion, optsData);
+
+            } catch (err) {
+                console.error("Error loading question:", err);
+                document.getElementById('question-text').innerText = "Error loading question. Check console configuration.";
+            }
+        }
+
+        function renderQuestion(q, options) {
+            // Populate Header Meta
+            document.getElementById('question-id-label').innerText = `Frage #${q.question_id}`;
+            document.getElementById('theory-page-label').innerText = q.theory_page ? `Theory: ${q.theory_page}` : '';
+
+            // Populate Question Text
+            document.getElementById('question-text').innerText = q.question_text;
+
+            // Handle Multiple Images Array
+            const imgContainer = document.getElementById('image-container');
+            imgContainer.innerHTML = '';
+
+            if (q.image_paths && q.image_paths.length > 0) {
+                imgContainer.classList.remove('hidden');
+                q.image_paths.forEach(imgUrl => {
+                    const imgElem = document.createElement('img');
+                    imgElem.src = imgUrl;
+                    imgElem.alt = "Question Graphic";
+                    imgElem.className = "max-h-48 object-contain rounded border border-slate-200 p-1 bg-white";
+                    imgContainer.appendChild(imgElem);
+                });
+            } else {
+                imgContainer.classList.add('hidden');
+            }
+
+            // Update Streak & Mastery UI
+            document.getElementById('streak-count').innerText = q.consecutive_correct;
+            const masteryBadge = document.getElementById('mastery-status');
+            if (q.is_mastered) {
+                masteryBadge.innerText = "Mastered ✓";
+                masteryBadge.className = "text-emerald-400 font-semibold";
+            } else {
+                masteryBadge.innerText = "Unmastered";
+                masteryBadge.className = "text-slate-400";
+            }
+
+            // Shuffle options so correct answer isn't always top
+            const shuffledOptions = shuffleArray([...options]);
+
+            // Render Option Buttons
+            const container = document.getElementById('options-container');
+            container.innerHTML = '';
+
+            shuffledOptions.forEach((opt, index) => {
+                const btn = document.createElement('button');
+                btn.className = "w-full text-left p-4 rounded-xl bg-slate-700/50 hover:bg-slate-700 border border-slate-600/60 transition text-slate-200 font-normal text-sm sm:text-base flex items-start space-x-3";
+
+                const letterSpan = document.createElement('span');
+                letterSpan.className = "font-bold text-blue-400 uppercase";
+                letterSpan.innerText = String.fromCharCode(65 + index) + "."; // A, B, C, D
+
+                const textSpan = document.createElement('span');
+                textSpan.innerText = opt.option_text;
+
+                btn.appendChild(letterSpan);
+                btn.appendChild(textSpan);
+
+                // Click Handler
+                btn.onclick = () => handleAnswerSelection(opt.is_correct, btn, shuffledOptions);
+                container.appendChild(btn);
+            });
+        }
+
+        async function handleAnswerSelection(isCorrect, selectedButton, allOptions) {
+            if (isAnswerLocked) return;
+            isAnswerLocked = true;
+
+            const buttons = document.getElementById('options-container').children;
+
+            // Highlight chosen and correct buttons
+            Array.from(buttons).forEach((btn, idx) => {
+                btn.disabled = true;
+                const optionData = allOptions[idx];
+
+                if (optionData.is_correct) {
+                    btn.className = "w-full text-left p-4 rounded-xl bg-emerald-900/40 border border-emerald-500 text-emerald-200 font-medium text-sm sm:text-base flex items-start space-x-3";
+                } else if (btn === selectedButton && !isCorrect) {
+                    btn.className = "w-full text-left p-4 rounded-xl bg-rose-900/40 border border-rose-500 text-rose-200 font-medium text-sm sm:text-base flex items-start space-x-3";
+                } else {
+                    btn.className += " opacity-50 cursor-not-allowed";
+                }
+            });
+
+            // Send answer update to Supabase backend RPC
+            try {
+                await supabaseClient.rpc('submit_answer', {
+                    ans_question_id: currentQuestion.question_id,
+                    is_answer_correct: isCorrect
+                });
+            } catch (err) {
+                console.error("Failed to submit answer progress:", err);
+            }
+
+            // Reveal Next Button
+            document.getElementById('next-btn').classList.remove('hidden');
+        }
+
+        // Initialize app on load
+        window.onload = loadNextQuestion;
+    </script>
+</body>
+
+</html>
