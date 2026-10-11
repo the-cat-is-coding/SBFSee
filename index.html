@@ -20,10 +20,15 @@
     <!-- Header -->
     <header class="w-full bg-slate-800 border-b border-slate-700 py-4 px-6 shadow-md">
         <div class="max-w-3xl mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold tracking-wide text-blue-400">⚓ SBFSee Training</h1>
-            <div id="stats-badge" class="text-sm bg-slate-700 px-3 py-1 rounded-full text-slate-300">
-                Streak: <span id="streak-count" class="font-bold text-white">0</span> | <span id="mastery-status"
-                    class="text-slate-400">Unmastered</span>
+            <h1 class="text-xl font-bold tracking-wide text-blue-400">⚓ SBF See</h1>
+            <div id="stats-badge"
+                class="text-xs sm:text-sm bg-slate-700 px-3 py-1 rounded-full text-slate-300 flex items-center space-x-1.5">
+                <span>Korrekt:</span>
+                <span id="streak-count" class="font-bold text-white">0</span>
+                <span class="text-slate-500">|</span>
+                <span>Overall:</span>
+                <span id="overall-mastery-pct" class="font-bold text-white">0%</span>
+                <span id="mastery-indicator" class="hidden text-emerald-400 font-bold ml-0.5">✓</span>
             </div>
         </div>
     </header>
@@ -122,9 +127,9 @@
             }
         }
 
-        function renderQuestion(q, options) {
+        async function renderQuestion(q, options) {
             // Populate Header Meta
-            document.getElementById('question-id-label').innerText = `Frage #${q.question_id}`;
+            document.getElementById('question-id-label').innerText = `Question #${q.question_id}`;
             document.getElementById('theory-page-label').innerText = q.theory_page ? `Theory: ${q.theory_page}` : '';
 
             // Populate Question Text
@@ -147,15 +152,38 @@
                 imgContainer.classList.add('hidden');
             }
 
-            // Update Streak & Mastery UI
+            // Update Korrekt Count
             document.getElementById('streak-count').innerText = q.consecutive_correct;
-            const masteryBadge = document.getElementById('mastery-status');
+
+            // Fetch Overall Mastery Percentage from Database
+            try {
+                const { count: totalQuestions, error: errTotal } = await supabaseClient
+                    .from('boating_questions')
+                    .select('*', { count: 'exact', head: true });
+
+                const { count: masteredQuestions, error: errMastered } = await supabaseClient
+                    .from('question_progress')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('is_mastered', true);
+
+                if (!errTotal && !errMastered && totalQuestions > 0) {
+                    const pct = Math.round((masteredQuestions / totalQuestions) * 100);
+                    document.getElementById('overall-mastery-pct').innerText = `${pct}%`;
+                }
+            } catch (err) {
+                console.error("Failed to calculate overall mastery percentage:", err);
+            }
+
+            // Update Question Mastery Style (White if unmastered, Green with ✓ if mastered)
+            const streakCountElem = document.getElementById('streak-count');
+            const masteryIndicator = document.getElementById('mastery-indicator');
+
             if (q.is_mastered) {
-                masteryBadge.innerText = "Mastered ✓";
-                masteryBadge.className = "text-emerald-400 font-semibold";
+                streakCountElem.className = "font-bold text-emerald-400";
+                masteryIndicator.classList.remove('hidden');
             } else {
-                masteryBadge.innerText = "Unmastered";
-                masteryBadge.className = "text-slate-400";
+                streakCountElem.className = "font-bold text-white";
+                masteryIndicator.classList.add('hidden');
             }
 
             // Shuffle options so correct answer isn't always top
